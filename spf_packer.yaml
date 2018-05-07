@@ -1,0 +1,16 @@
+---
+version: spf1
+domain: yourdomainnname.example
+spfmaxchars: 500
+policy: "~all"
+ipv4:
+  - 127.0.0.1/8
+ipv6:
+  - "::1"
+includes:
+  - 3rdparty.domain.example
+a:
+  - mailhost.example
+mx:
+  - mx.domain.example
+
