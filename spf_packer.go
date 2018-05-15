@@ -22,6 +22,7 @@ type Config struct {
 	Version string
 	Domain string
 	SpfMaxChars int
+	Rawtxt string
 	Policy string
 	Ipv4 []string
 	Ipv6 []string
@@ -111,9 +112,6 @@ func expandFields(result []string) []string {
 		p := "a:"
 		if strings.HasPrefix(field, p) {
 			ips := resolveA(field[len(p):])
-			//~ for _, ip := range ips {
-				//~ fmt.Printf("a:%s/32\n", ip)
-			//~ }
 			spf_set = append(spf_set, ips...)
 			continue
 		}
@@ -160,7 +158,7 @@ func outputSpfText(result []string, cfg *Config) {
 	suffix := "a"
 	include_spf := "include:spf_" + suffix + "." + domain
 	spf_records := []string{}
-	current_record := "v=" + cfg.Version
+	current_record := "v=" + cfg.Version + " " + cfg.Rawtxt
 	spf_max_chars := cfg.SpfMaxChars
 
 	for i, record := range result {

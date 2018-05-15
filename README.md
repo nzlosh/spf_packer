@@ -19,6 +19,7 @@ version: spf1
 domain: domain.example
 spfmaxchars: 500
 policy: "~all"
+rawtxt: "include:anotherdomain.example"
 ipv4:
   - 127.0.0.1/8
 ipv6:
@@ -39,6 +40,7 @@ redirect: []
 | `version` | string | The spf version string, `spf1` is the current version as of writing. |
 | `domain` | string | The name of the domain to be used when generating include directives. (normally the owners domain) |
 | `spfmaxchars` | integer | The maximum number of characters an SPF TXT record may contain before another is created. |
+| `rawtxt` | string | Insert raw text into the SPF TXT record before any name resolution is performed. |
 | `policy` | string | The SPF policy to be used when generating the SPF TXT records. |
 | `ipv4` | list of strings | IPv4 addresses in CIDR notation to be included. |
 | `ipv6` | list of strings | IPv6 addresses in CIDR notation to be included. |
