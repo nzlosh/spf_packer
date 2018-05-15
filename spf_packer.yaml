@@ -3,6 +3,7 @@ version: spf1
 domain: yourdomainnname.example
 spfmaxchars: 500
 policy: "~all"
+rawtxt: "include:another.domain.exmaple"
 ipv4:
   - 127.0.0.1/8
 ipv6:
@@ -13,4 +14,3 @@ a:
   - mailhost.example
 mx:
   - mx.domain.example
-
