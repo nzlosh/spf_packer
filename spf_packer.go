@@ -156,17 +156,17 @@ func expandFields(result []string) []string {
 func outputSpfText(result []string, cfg *Config) {
 	domain := cfg.Domain
 	suffix := "a"
-	include_spf := "include:spf_" + suffix + "." + domain
 	spf_records := []string{}
 	current_record := "v=" + cfg.Version + " " + cfg.Rawtxt
 	spf_max_chars := cfg.SpfMaxChars
+	root_spf := current_record + " include:spf_" + suffix + "." + domain
 
 	for i, record := range result {
-		if len( current_record + " " + record + " " + include_spf + " " + cfg.Policy) > spf_max_chars {
-			spf_records = append(spf_records,  current_record + " " + include_spf + " " + cfg.Policy)
+		if len( current_record + " " + record + " " + cfg.Policy) > spf_max_chars {
+			spf_records = append(spf_records,  current_record + " " + cfg.Policy)
 			current_record = "v=" + cfg.Version + " " + record
 			suffix = string([]byte(suffix)[0]+1)
-			include_spf = "include:spf_" + suffix + "." + domain
+			root_spf += " include:spf_" + suffix + "." + domain
 		} else {
 			current_record += " " + record
 		}
@@ -174,7 +174,9 @@ func outputSpfText(result []string, cfg *Config) {
 			spf_records = append(spf_records, current_record + " " + cfg.Policy)
 		}
 	}
+	root_spf += " " + cfg.Policy
 	fmt.Printf("\nPacked SPF TXT records for %s.\n", domain)
+	fmt.Printf("%s\n", root_spf)
 	for _, v := range spf_records {
 		fmt.Printf("\n%s\n", v)
 	}
