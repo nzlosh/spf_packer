@@ -157,20 +157,20 @@ func outputSpfText(result []string, cfg *Config) {
 	domain := cfg.Domain
 	suffix := "a"
 	spf_records := []string{}
-	current_record := "v=" + cfg.Version + " " + cfg.Rawtxt
+	current_record := "v=" + cfg.Version
 	spf_max_chars := cfg.SpfMaxChars
-	root_spf := current_record + " include:spf_" + suffix + "." + domain
+	root_spf := current_record + " " + cfg.Rawtxt + " include:spf" + suffix + "." + domain
 
 	for i, record := range result {
 		if len( current_record + " " + record + " " + cfg.Policy) > spf_max_chars {
 			spf_records = append(spf_records,  current_record + " " + cfg.Policy)
 			current_record = "v=" + cfg.Version + " " + record
 			suffix = string([]byte(suffix)[0]+1)
-			root_spf += " include:spf_" + suffix + "." + domain
+			root_spf += " include:spf" + suffix + "." + domain
 		} else {
 			current_record += " " + record
 		}
-		if i == len(result)-1 {
+		if i == len(result) - 1 {
 			spf_records = append(spf_records, current_record + " " + cfg.Policy)
 		}
 	}
