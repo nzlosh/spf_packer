@@ -221,6 +221,8 @@ func main() {
     result := processConfiguration(cfg)
     result = expandFields(result)
     result = deduplicateAddressRanges(result)
+    pdns_result := makeRRSet(result, cfg)
+    convertRRSetToString(pdns_result)
     result = makeSpfFields(result, cfg)
     if (PdnsConfig{}) == cfg.Pdns {
         // PowerDNS configuration not present, display results to console.
@@ -487,14 +489,25 @@ func makeSpfFields(result []string, cfg *Config) []string {
 func makeRRSet(result []string, cfg *Config) []RRSet {
     domain := cfg.Domain
     suffix := "a"
-    spf_records := []string{}
+    spf_records := []RRSet{}
     current_record := "v=" + cfg.Version
     spf_max_chars := cfg.SpfMaxChars
     root_spf := fmt.Sprintf("%s %s include:spf%s.%s", current_record, cfg.Rawtxt, suffix, domain)
 
     for i, record := range result {
         if len(current_record + " " + record + " " + cfg.Policy) > spf_max_chars {
-            spf_records = append(spf_records,  current_record + " " + cfg.Policy)
+            spf_records = append(spf_records, RRSet{
+                    Comments: []Comment{},
+                    Name: fmt.Sprintf("spf%s.%s", suffix, domain),
+                    Records: []Record{
+                        Record{
+                            Content: fmt.Sprintf("%s %s", current_record, cfg.Policy),
+                            Disabled: false,
+                            Setptr: false,
+                        },
+                    },
+                    Type: "TXT",
+                })
             current_record = fmt.Sprintf("v=%s %s", cfg.Version, record)
             suffix = string([]byte(suffix)[0]+1)
             root_spf += fmt.Sprintf(" include:spf%s.%s", suffix, domain)
@@ -502,12 +515,35 @@ func makeRRSet(result []string, cfg *Config) []RRSet {
             current_record = fmt.Sprintf("%s %s", current_record, record)
         }
         if i == len(result) - 1 {
-            spf_records = append(spf_records, fmt.Sprintf("%s %s", current_record, cfg.Policy))
+            spf_records = append(spf_records, RRSet{
+                    Comments: []Comment{},
+                    Name: fmt.Sprintf("spf%s.%s", suffix, domain),
+                    Records: []Record{
+                        Record{
+                            Content: fmt.Sprintf("%s %s", current_record, cfg.Policy),
+                            Disabled: false,
+                            Setptr: false,
+                        },
+                    },
+                    Type: "TXT",
+                })
         }
     }
-    root_spf += " " + cfg.Policy
-    // Insert the root spf at the beginning of the array and return the result.
-    return append(spf_records[:0], append([]string{root_spf}, spf_records[0:]...)...)
+
+    spf_records = append(spf_records, RRSet{
+        Comments: []Comment{},
+        Name: domain,
+        Records: []Record{
+            Record{
+                Content: fmt.Sprintf("%s %s", root_spf, cfg.Policy),
+                Disabled: false,
+                Setptr: false,
+            },
+        },
+        Type: "TXT",
+    })
+
+    return spf_records
 }
 
 func printSpf(spf_records []string, domain string) {
