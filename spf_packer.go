@@ -218,10 +218,6 @@ func (c *PowerDNSClient) recordDelete(server_id string) bool {
 
 func main() {
     cfg := LoadConfig(os.Args[0]+".yaml")
-    pdns := PowerDNSClient{}
-    pdns.setConfiguration(cfg.Pdns)
-    dm_zone := pdns.zoneGet("", cfg.Domain)
-    fmt.Println(green(dm_zone.Name), len(dm_zone.Rrsets))
     result := processConfiguration(cfg)
     result = expandFields(result)
     result = deduplicateAddressRanges(result)
@@ -231,8 +227,11 @@ func main() {
         printSpf(result, cfg.Domain)
     } else {
         fmt.Printf("%s\n", red("Updating PowerDNS entries"))
-        dm_zone
-        //updatePdns(result, cfg)
+        pdns := PowerDNSClient{}
+        pdns.setConfiguration(cfg.Pdns)
+        zone := pdns.zoneGet("", cfg.Domain)
+        fmt.Println(green(zone.Name), len(zone.Rrsets))
+        updatePdns(result, cfg)
     }
 }
 
@@ -485,6 +484,32 @@ func makeSpfFields(result []string, cfg *Config) []string {
 }
 
 
+func makeRRSet(result []string, cfg *Config) []RRSet {
+    domain := cfg.Domain
+    suffix := "a"
+    spf_records := []string{}
+    current_record := "v=" + cfg.Version
+    spf_max_chars := cfg.SpfMaxChars
+    root_spf := fmt.Sprintf("%s %s include:spf%s.%s", current_record, cfg.Rawtxt, suffix, domain)
+
+    for i, record := range result {
+        if len(current_record + " " + record + " " + cfg.Policy) > spf_max_chars {
+            spf_records = append(spf_records,  current_record + " " + cfg.Policy)
+            current_record = fmt.Sprintf("v=%s %s", cfg.Version, record)
+            suffix = string([]byte(suffix)[0]+1)
+            root_spf += fmt.Sprintf(" include:spf%s.%s", suffix, domain)
+        } else {
+            current_record = fmt.Sprintf("%s %s", current_record, record)
+        }
+        if i == len(result) - 1 {
+            spf_records = append(spf_records, fmt.Sprintf("%s %s", current_record, cfg.Policy))
+        }
+    }
+    root_spf += " " + cfg.Policy
+    // Insert the root spf at the beginning of the array and return the result.
+    return append(spf_records[:0], append([]string{root_spf}, spf_records[0:]...)...)
+}
+
 func printSpf(spf_records []string, domain string) {
     fmt.Printf("\nPacked SPF TXT records for %s.\n", domain)
     for _, v := range spf_records {
@@ -577,9 +602,9 @@ func updatePdns(result []string, cfg *Config) {
     rrecords := getPowerDNS(cfg.Domain, cfg)
     records := convertRRSetToString(rrecords)
 
-	for i, r := range result {
-		fmt.Println(yellow(fmt.Sprintf("%d) %s", i, r)))
-	}
+    for i, r := range result {
+        fmt.Println(yellow(fmt.Sprintf("%d) %s", i, r)))
+    }
 
     sort.Strings(result)
     sort.Strings(records)
@@ -604,7 +629,7 @@ func updatePdns(result []string, cfg *Config) {
 
 func getOwnDomainSPF(cfg *Config) []string {
 /*
- * Use DNS lookups to retrieve exist SPF records for the domain.
+ * Use DNS lookups to retrieve existing SPF records for the domain.
  */
     original_spf := []string{}
 
@@ -701,11 +726,12 @@ func getPowerDNS(zone string, cfg *Config) []RRSet {
 }
 
 func filterSPF(domain_records PowerDNSZone) []RRSet {
-    // filter results for domain.
+    // Return the set of SPF records for the domain.
     records := []RRSet{}
     name := strings.TrimSuffix(domain_records.Name, ".")
     for _, rr := range(domain_records.Rrsets) {
-        if rr.Type == "TXT" && (strings.HasPrefix(rr.Name, name) || strings.HasPrefix(rr.Name, "spf")) {
+        ok, _ := regexp.Match("^(spf[^.]+\\.)?" + name, []byte(rr.Name))
+        if ok == true && rr.Type == "TXT" {
             for _, r := range(rr.Records){
                 if strings.HasPrefix(r.Content, "\"v=spf1") {
                     records = append(records, rr)
