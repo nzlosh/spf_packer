@@ -237,7 +237,7 @@ func main() {
         pdns_result := makeRRSet(result, cfg)
 
         // Display for debug
-        convertRRSetToString(pdns_result)
+        //convertRRSetToString(pdns_result)
         pdns := PowerDNSClient{}
         pdns.setConfiguration(cfg.Pdns)
         zone := pdns.zoneGet("", cfg.Domain)
@@ -527,7 +527,7 @@ func makeRRSet(result []string, cfg *Config) []RRSet {
         if i == len(result) - 1 {
             spf_records = append(spf_records, RRSet{
                     Comments: []Comment{},
-                    Name: fmt.Sprintf("spf%s.%s", suffix, domain),
+                    Name: fmt.Sprintf("spf%s.%s.", suffix, domain),
                     Records: []Record{
                         Record{
                             Content: fmt.Sprintf("\"%s %s\"", current_record, cfg.Policy),
@@ -665,7 +665,13 @@ func updatePdns(result []RRSet, cfg *Config) {
         for _, y := range records {
             fmt.Printf(" [%s] ", y.Name)
             if x.Name == y.Name {
-                fmt.Printf("Match")
+                fmt.Printf("Match!\n")
+                for _, v := range x.Records {
+                    fmt.Println(v.Content)
+                }
+                for _, v := range y.Records {
+                    fmt.Println(v.Content)
+                }
                 break
             }
         }
