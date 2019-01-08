@@ -7,7 +7,6 @@ import
     "log"
     "net"
     "time"
-    "sort"
     "errors"
     "regexp"
     "strings"
@@ -218,22 +217,32 @@ func (c *PowerDNSClient) recordDelete(server_id string) bool {
 
 func main() {
     cfg := LoadConfig(os.Args[0]+".yaml")
+    // parse configuration
     result := processConfiguration(cfg)
+
+    // resolve dns entries to create a list of address.
     result = expandFields(result)
+
+    // de-duplicate overlapping address ranges.
     result = deduplicateAddressRanges(result)
-    pdns_result := makeRRSet(result, cfg)
-    convertRRSetToString(pdns_result)
-    result = makeSpfFields(result, cfg)
+
+    // If PowerDNS configuration is not present, display results to console.
     if (PdnsConfig{}) == cfg.Pdns {
-        // PowerDNS configuration not present, display results to console.
+        // Create SPF TXT entries for list of addresses.
+        result = makeSpfFields(result, cfg)
         printSpf(result, cfg.Domain)
     } else {
         fmt.Printf("%s\n", red("Updating PowerDNS entries"))
+        // Create SPF entries in the form of PowerDNS Resource Records.
+        pdns_result := makeRRSet(result, cfg)
+
+        // Display for debug
+        convertRRSetToString(pdns_result)
         pdns := PowerDNSClient{}
         pdns.setConfiguration(cfg.Pdns)
         zone := pdns.zoneGet("", cfg.Domain)
         fmt.Println(green(zone.Name), len(zone.Rrsets))
-        updatePdns(result, cfg)
+        updatePdns(pdns_result, cfg)
     }
 }
 
@@ -358,7 +367,7 @@ func deduplicateAddressRanges(result []string) []string {
     for _, a := range(result) {
         log.Printf("%s\n", a)
     }*/
-    fmt.Printf(blue("De-duplication address ranges unavailable.\n"))
+    fmt.Printf(blue("De-duplicate address ranges not implemented.\n"))
     return result
 }
 
@@ -468,7 +477,7 @@ func makeSpfFields(result []string, cfg *Config) []string {
     root_spf := fmt.Sprintf("%s %s include:spf%s.%s", current_record, cfg.Rawtxt, suffix, domain)
 
     for i, record := range result {
-        if len(current_record + " " + record + " " + cfg.Policy) > spf_max_chars {
+        if len(fmt.Sprintf("\"%s %s %s\"", current_record, record, cfg.Policy)) > spf_max_chars {
             spf_records = append(spf_records,  current_record + " " + cfg.Policy)
             current_record = fmt.Sprintf("v=%s %s", cfg.Version, record)
             suffix = string([]byte(suffix)[0]+1)
@@ -495,17 +504,18 @@ func makeRRSet(result []string, cfg *Config) []RRSet {
     root_spf := fmt.Sprintf("%s %s include:spf%s.%s", current_record, cfg.Rawtxt, suffix, domain)
 
     for i, record := range result {
-        if len(current_record + " " + record + " " + cfg.Policy) > spf_max_chars {
+        if len(fmt.Sprintf("\"%s %s %s\"", current_record, record, cfg.Policy)) > spf_max_chars {
             spf_records = append(spf_records, RRSet{
                     Comments: []Comment{},
-                    Name: fmt.Sprintf("spf%s.%s", suffix, domain),
+                    Name: fmt.Sprintf("spf%s.%s.", suffix, domain),
                     Records: []Record{
                         Record{
-                            Content: fmt.Sprintf("%s %s", current_record, cfg.Policy),
+                            Content: fmt.Sprintf("\"%s %s\"", current_record, cfg.Policy),
                             Disabled: false,
                             Setptr: false,
                         },
                     },
+                    Ttl: 43200,
                     Type: "TXT",
                 })
             current_record = fmt.Sprintf("v=%s %s", cfg.Version, record)
@@ -520,11 +530,12 @@ func makeRRSet(result []string, cfg *Config) []RRSet {
                     Name: fmt.Sprintf("spf%s.%s", suffix, domain),
                     Records: []Record{
                         Record{
-                            Content: fmt.Sprintf("%s %s", current_record, cfg.Policy),
+                            Content: fmt.Sprintf("\"%s %s\"", current_record, cfg.Policy),
                             Disabled: false,
                             Setptr: false,
                         },
                     },
+                    Ttl: 43200,
                     Type: "TXT",
                 })
         }
@@ -532,14 +543,15 @@ func makeRRSet(result []string, cfg *Config) []RRSet {
 
     spf_records = append(spf_records, RRSet{
         Comments: []Comment{},
-        Name: domain,
+        Name: fmt.Sprintf("%s.", domain),
         Records: []Record{
             Record{
-                Content: fmt.Sprintf("%s %s", root_spf, cfg.Policy),
+                Content: fmt.Sprintf("\"%s %s\"", root_spf, cfg.Policy),
                 Disabled: false,
                 Setptr: false,
             },
         },
+        Ttl: 43200,
         Type: "TXT",
     })
 
@@ -632,33 +644,32 @@ func convertRRSetToString(records []RRSet) []string {
     return s
 }
 
-func updatePdns(result []string, cfg *Config) {
-    // Call getOwnDomainSPF when not using PowerDNS
-    //own_spf := getOwnDomainSPF(cfg)
-    rrecords := getPowerDNS(cfg.Domain, cfg)
-    records := convertRRSetToString(rrecords)
+func updatePdns(result []RRSet, cfg *Config) {
+
+    records := getPowerDNS(cfg.Domain, cfg)
 
     for i, r := range result {
         fmt.Println(yellow(fmt.Sprintf("%d) %s", i, r)))
     }
 
-    sort.Strings(result)
-    sort.Strings(records)
-
     fmt.Printf("DNS entities new=%d, original=%d\n", len(result), len(records))
     if len(result) == len(records) {
-        for i, _ := range(result) {
-            fmt.Println(result[i] == records[i])
-            for _, f := range(strings.Split(result[i], " ")) {
-                fmt.Printf("%s\n", yellow(f))
-            }
-            for _, f := range(strings.Split(records[i], " ")) {
-                fmt.Printf("%s\n", green(f))
+        fmt.Println("Same length, check spf field for differences.")
+    } else {
+        fmt.Println("SPF has changed, update DNS records.")
+        //createTxtPowerDNS(result)
+    }
+
+    for _, x := range result {
+        fmt.Printf("%s ", x.Name)
+        for _, y := range records {
+            fmt.Printf(" [%s] ", y.Name)
+            if x.Name == y.Name {
+                fmt.Printf("Match")
+                break
             }
         }
-    } else {
-        fmt.Println("SPF has changed, update DNS records")
-        createTxtPowerDNS(result)
+        fmt.Printf("\n")
     }
 }
 
