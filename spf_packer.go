@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"gopkg.in/yaml.v2"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -36,6 +38,7 @@ type PowerDNSClient struct {
 	cfg        PdnsConfig
 	tls_config tls.Config
 	transport  *http.Transport
+	zone       PowerDNSZone
 }
 
 func (c *PowerDNSClient) setConfiguration(cfg PdnsConfig) {
@@ -52,15 +55,16 @@ func (c *PowerDNSClient) setConfiguration(cfg PdnsConfig) {
 	}
 }
 
-func (c *PowerDNSClient) call(verb string, url url.URL) *http.Response {
+func (c *PowerDNSClient) call(verb string, url url.URL, body io.ReadCloser) *http.Response {
 	// Set SSL certficate hostname.
 	c.transport.TLSClientConfig.ServerName = url.Hostname()
 	r := http.Request{
 		Method: verb,
 		URL:    &url,
-		Body:   nil,
+		Body:   body,
 		Header: make(http.Header),
 	}
+
 	// Pass basic authentication
 	r.SetBasicAuth(c.cfg.Username, c.cfg.Password)
 
@@ -75,20 +79,19 @@ func (c *PowerDNSClient) call(verb string, url url.URL) *http.Response {
 		log.Printf("Error accessing %s.  %s\n", url.String(), err)
 		os.Exit(1)
 	}
-
 	return resp
 }
 
 func (c *PowerDNSClient) zonesList(server_id string) []PowerDNSZone {
 	//GET /servers/{server_id}/zones
 	if server_id != "" {
-		server_id = "servers/" + server_id
+		server_id = "servers/" + server_id + "/"
 	}
-	api_url, err := url.Parse(c.cfg.Api_url + server_id + "/zones")
+	api_url, err := url.Parse(c.cfg.Api_url + server_id + "zones")
 	if err != nil {
 		log.Fatal(err)
 	}
-	resp := c.call("GET", *api_url)
+	resp := c.call("GET", *api_url, nil)
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -117,15 +120,15 @@ func (c *PowerDNSClient) zoneCreate(server_id string) PowerDNSZone {
 func (c *PowerDNSClient) zoneGet(server_id string, zone_id string) PowerDNSZone {
 	// GET /servers/{server_id}/zones/{zone_id}
 	if server_id != "" {
-		server_id = "servers/" + server_id
+		server_id = "servers/" + server_id + "/"
 	}
 
-	api_url, err := url.Parse(c.cfg.Api_url + server_id + "/zones/" + zone_id)
+	api_url, err := url.Parse(c.cfg.Api_url + server_id + "zones/" + zone_id)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	resp := c.call("GET", *api_url)
+	resp := c.call("GET", *api_url, nil)
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -160,50 +163,46 @@ func (c *PowerDNSClient) recordCreate(server_id string) bool {
 	return false
 }
 
-func (c *PowerDNSClient) recordUpdate(server_id string, zone_id string, records []RRSet) bool {
+func (c *PowerDNSClient) recordUpdate(server_id string, zone_id string, records RRSets) bool {
 	// PATCH /servers/{server_id}/zones/{zone_id}
-	/* JSON representation of RRSet entry.  "changetype":
-	   * DELETE, all existing RRs matching name and type will be deleted, including all comments.
-	   * REPLACE: when records is present, all existing RRs matching name and type will be deleted,
-	   * and then new records given in records will be created.
-	         {
-	          "comments": [],
-	          "name": "host.example.com.",
-	          "records": [
-	            {
-	              "content": "a.example.com.",
-	              "disabled": false
-	            },
-	            {
-	              "content": "b.example.com.",
-	              "disabled": false
-	            }
-	          ],
-	          "ttl": 86400,
-	          "type": "NS"
-	        },
-	*/
+
 	if server_id != "" {
-		server_id = "servers/" + server_id
+		server_id = "servers/" + server_id + "/"
 	}
 
-	api_url, err := url.Parse(c.cfg.Api_url + server_id + "/zones/" + zone_id)
+	api_url, err := url.Parse(c.cfg.Api_url + server_id + "zones/" + zone_id)
 	if err != nil {
 		log.Fatal(err)
 	}
+	/* rather than using the full zone object, a minimalist one is used to construct the JSON sent
+	 * as the request body.
+	 */
+	s := fmt.Sprintf("{\"rrsets\": %s}", rrsetToJson(records))
+	fmt.Println(s)
+	/* http.Client.Body needs an io.ReadCloser, so bytes pkg converts the []byte to an io.Reader.
+	 * Since a []byte doesn't need to be closed it's wrapped in ioutil.NopCloser.
+	 * https://stackoverflow.com/questions/52076747/how-do-i-turn-an-io-reader-into-a-io-readcloser
+	 */
+	send_body := ioutil.NopCloser(bytes.NewReader([]byte(s)))
+	defer send_body.Close()
 
-	resp := c.call("PATCH", *api_url)
+	resp := c.call("PATCH", *api_url, send_body)
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(len(body))
 
 	if resp.StatusCode != 204 {
-		log.Fatal("HTTP Error " + api_url.String() + " " + resp.Status)
-		return false
+		log.Fatal(
+			fmt.Sprintf(
+				"HTTP Error encounter for %s.  %s - %s\n",
+				api_url.String(),
+				resp.Status,
+				string(body),
+			),
+		)
 	}
 	return true
 }
@@ -221,7 +220,7 @@ func main() {
 	result := processConfiguration(cfg)
 
 	// resolve dns entries to create a list of address.
-	result = expandFields(result)
+	result = resolveSPFFields(result)
 
 	// de-duplicate overlapping address ranges.
 	result = deduplicateAddressRanges(result)
@@ -232,18 +231,85 @@ func main() {
 		result = makeSpfFields(result, cfg)
 		printSpf(result, cfg.Domain)
 	} else {
-		fmt.Printf("%s\n", red("Updating PowerDNS entries"))
+		log.Println("Comparing with PowerDNS entries")
 		// Create SPF entries in the form of PowerDNS Resource Records.
 		pdns_result := makeRRSet(result, cfg)
 
-		// Display for debug
-		//convertRRSetToString(pdns_result)
 		pdns := PowerDNSClient{}
 		pdns.setConfiguration(cfg.Pdns)
 		zone := pdns.zoneGet("", cfg.Domain)
-		fmt.Println(green(zone.Name), len(zone.Rrsets))
-		updatePdns(pdns_result, cfg)
+		records := filterSPF(zone)
+
+		if rrsetEquivalent(pdns_result, records) {
+			log.Println("SPF records are same.")
+		} else {
+			log.Println(red("SPF has changed, update DNS records."))
+			update := createUpdateRecords(pdns_result, records)
+			if pdns.recordUpdate("", cfg.Domain, update) {
+				log.Println("Updated DNS records successfully.")
+			} else {
+				log.Println("Failed to update DNS records.")
+			}
+		}
 	}
+}
+
+func createUpdateRecords(latest []RRSet, original []RRSet) RRSets {
+	// Compare the update RRset with the original RRset to produce a new
+	// RRset to used to update PowerDNS.
+	update := RRSets{}
+	// Find records to be updated.
+	for _, rlatest := range latest {
+		update = append(update, rlatest)
+		idx := len(update) - 1
+		for _, roriginal := range original {
+			// If there is a match between the records, merge original excluding spf entries.
+			if rlatest.Name == roriginal.Name {
+				update[idx].Changetype = "REPLACE"
+				update[idx].Ttl = roriginal.Ttl
+				for _, non_spf := range roriginal.Records {
+					ok, _ := regexp.Match(`^"v=spf1`, []byte(non_spf.Content))
+					if ok == false {
+						update[idx].Records = append(update[idx].Records, non_spf)
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// Find records to be deleted.
+	if len(original) > len(update) {
+		for _, roriginal := range original {
+			match := false
+			for _, rupdate := range update {
+				if roriginal.Name == rupdate.Name {
+					match = true
+				}
+			}
+			// If there was no match, the original record must be deleted.
+			if match == false {
+				update = append(update,
+					RRSet{
+						Changetype: "DELETE",
+						Comments:   []Comment{},
+						Name:       roriginal.Name,
+						Records:    []Record{},
+						Type:       "TXT",
+						Ttl:        0,
+					})
+			}
+		}
+	}
+
+	/* Any records that are not already tagged are creates so we add the REPLACE value */
+	for i, r := range update {
+		if !(r.Changetype == "DELETE" || r.Changetype == "REPLACE") {
+			update[i].Changetype = "REPLACE"
+		}
+	}
+
+	return update
 }
 
 func red(s string) string {
@@ -289,24 +355,24 @@ type Config struct {
 }
 
 type Comment struct {
-	Content     string
-	Account     string
-	Modified_at int
+	Content     string `json:"content"`
+	Account     string `json:"account"`
+	Modified_at int    `json:"modified_at"`
 }
 
 type Record struct {
-	Content  string
-	Disabled bool
-	Setptr   bool `json: "set-ptr"`
+	Content  string `json:"content"`
+	Disabled bool   `json:"disabled"`
+	Setptr   bool   `json:"set-ptr"`
 }
 
 type RRSet struct {
-	Name       string
-	Type       string
-	Ttl        int
-	Changetype string
-	Records    []Record
-	Comments   []Comment
+	Name       string    `json:"name"`
+	Type       string    `json:"type"`
+	Ttl        int       `json:"ttl,omitempty"`
+	Changetype string    `json:"changetype"`
+	Records    []Record  `json:"records"`
+	Comments   []Comment `json:"comments"`
 }
 
 /* Define RRSets to provide the Sort interface. */
@@ -335,27 +401,27 @@ func (s Records) Less(i, j int) bool {
 }
 
 type PowerDNSZone struct {
-	Id                  string
-	Name                string
-	Type                string
-	Url                 string
-	Kind                string
-	Rrsets              []RRSet
-	Serial              int
-	Notified_serial     int
-	Masters             []string
-	Dnssec              bool
-	Nsec3param          string
-	Nsec3narrow         bool
-	Presigned           bool
-	Soa_edit            string
-	Soa_edit_api        string
-	Api_rectify         bool
-	Zone                string
-	Account             string
-	Nameservers         []string
-	Tsig_master_key_ids []string
-	Tsig_slave_key_ids  []string
+	Id                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Type                string   `json:"type"`
+	Url                 string   `json:"url"`
+	Kind                string   `json:"kind'`
+	Rrsets              []RRSet  `json:"rrsets"`
+	Serial              int      `json:"serial"`
+	Notified_serial     int      `json:"notified_serial"`
+	Masters             []string `json:"master"`
+	Dnssec              bool     `json:"dnssec"`
+	Nsec3param          string   `json:"nsec3param"`
+	Nsec3narrow         bool     `json:"nsec3narrow"`
+	Presigned           bool     `json:"presigned"`
+	Soa_edit            string   `json:"soa_edit"`
+	Soa_edit_api        string   `json:"soa_edit_api"`
+	Api_rectify         bool     `json:"api_rectify:`
+	Zone                string   `json:"zone"`
+	Account             string   `json:"account"`
+	Nameservers         []string `json:"nameservers"`
+	Tsig_master_key_ids []string `json:"tsig_master_keys_ids"`
+	Tsig_slave_key_ids  []string `json:"tsig_slave_key_ids"`
 }
 
 func processConfiguration(cfg *Config) []string {
@@ -429,7 +495,7 @@ func parseSPFText(spf_text string) []string {
 	return fields
 }
 
-func expandFields(result []string) []string {
+func resolveSPFFields(result []string) []string {
 	spf_set := []string{}
 	for _, field := range result {
 		if field == "v=spf1" {
@@ -450,7 +516,7 @@ func expandFields(result []string) []string {
 			for _, text := range texts {
 				spf_fields := parseSPFText(text)
 				if len(spf_fields) > 0 {
-					ips := expandFields(spf_fields)
+					ips := resolveSPFFields(spf_fields)
 					spf_set = append(spf_set, ips...)
 				}
 			}
@@ -567,7 +633,6 @@ func makeRRSet(result []string, cfg *Config) []RRSet {
 		Ttl:  43200,
 		Type: "TXT",
 	})
-
 	return spf_records
 }
 
@@ -640,179 +705,54 @@ func resolveA(record string) []string {
 	return ips
 }
 
-func convertRRSetToString(records []RRSet) []string {
-	s := []string{}
-	for _, r := range records {
-		b, err := json.MarshalIndent(r, "", "  ")
-		if err != nil {
-			fmt.Println(red(fmt.Sprintf("error: %s", err)))
-		}
-		os.Stdout.Write(b)
+func rrsetToJson(records []RRSet) []byte {
+	b, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		fmt.Println(red(fmt.Sprintf("error: %s", err)))
 	}
-	return s
-}
-
-func updatePdns(result []RRSet, cfg *Config) {
-
-	records := getPowerDNS(cfg.Domain, cfg)
-
-	for i, r := range result {
-		fmt.Println(yellow(fmt.Sprintf("%d) %s", i, r)))
-	}
-
-	fmt.Printf("DNS entities new=%d, original=%d\n", len(result), len(records))
-	if rrsetEquivalent(result, records) {
-		fmt.Println("SPF records are same.")
-	} else {
-		fmt.Println("SPF has changed, update DNS records.")
-		//createTxtPowerDNS(result)
-	}
+	return b
 }
 
 func rrsetEquivalent(set1 []RRSet, set2 []RRSet) bool {
 	// Sort sets to simplify comparing.
 	sort.Sort(RRSets(set1))
 	sort.Sort(RRSets(set2))
-
+	matched := true
 	if len(set1) == len(set2) {
 		for i, _ := range set1 {
-			if set1[i].Name == set2[i].Name {
-				spf1 := "1"
-				spf2 := "2"
-				if len(set1[i].Records) > 1 {
-					sort.Sort(Records(set1[i].Records))
-					for _, r := range set1[i].Records {
-						if strings.HasPrefix(r.Content, "\"v=spf1") {
-							spf1 = r.Content
-							break
-						}
-					}
-				} else {
-					spf1 = set1[i].Records[0].Content
-				}
-				if len(set2[i].Records) > 1 {
-					sort.Sort(Records(set2[i].Records))
-					for _, r := range set2[i].Records {
-						if strings.HasPrefix(r.Content, "\"v=spf1") {
-							spf2 = r.Content
-							break
-						}
-					}
-				} else {
-					spf2 = set2[i].Records[0].Content
-				}
-				// compare records
-				if spf1 != spf2 {
-					fmt.Println("SPF content does not match.")
+			if set1[i].Name != set2[i].Name {
+				fmt.Println("Records do not match.")
+				matched = false
+				break
+			}
+			sort.Sort(Records(set1[i].Records))
+			spf1 := "not_spf2"
+			for _, r := range set1[i].Records {
+				if strings.HasPrefix(r.Content, "\"v=spf1") {
+					spf1 = r.Content
 					break
 				}
-
-			} else {
-				fmt.Println("Records do not match.")
+			}
+			sort.Sort(Records(set2[i].Records))
+			spf2 := "not_spf1"
+			for _, r := range set2[i].Records {
+				if strings.HasPrefix(r.Content, "\"v=spf1") {
+					spf2 = r.Content
+					break
+				}
+			}
+			// compare records
+			if spf1 != spf2 {
+				matched = false
 				break
 			}
 		}
 	}
-	return false
-}
-
-func getOwnDomainSPF(cfg *Config) []string {
-	/*
-	 * Use DNS lookups to retrieve existing SPF records for the domain.
-	 */
-	original_spf := []string{}
-
-	txt := resolveInclude(cfg.Domain)
-	for _, field := range txt {
-		original_spf = parseSPFText(field)
-		// If lookup text field is valid SPF, original_spf will not be empty.
-		if len(original_spf) > 0 {
-			break
-		}
-	}
-	// Only process spf records that match the source domain.
-	domain_only_spf := []string{}
-	for _, field := range original_spf {
-		if strings.HasSuffix(field, cfg.Domain) {
-			domain_only_spf = append(domain_only_spf, field)
-		}
-	}
-	return domain_only_spf
-}
-
-func createTxtPowerDNS(results []string) bool {
-	/*
-	   PATCH /servers/{server_id}/zones/{zone_id}
-	*/
-	for _, result := range results {
-		fmt.Println(red(result))
-	}
-	return true
-}
-
-func getPowerDNS(zone string, cfg *Config) []RRSet {
-	/*
-	 * Use PowerDNS API to retrieve exist SPF records for the domain.
-	 */
-	log.Printf("PowerDNS url=%s\n", cfg.Pdns.Api_url)
-
-	api_url, err := url.Parse(fmt.Sprintf("%szones/%s", cfg.Pdns.Api_url, cfg.Domain))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// configure client transport settings
-	tr := &http.Transport{
-		MaxIdleConns:       10,
-		IdleConnTimeout:    30 * time.Second,
-		DisableCompression: true,
-		TLSClientConfig: &tls.Config{
-			ServerName: api_url.Hostname(),
-		},
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
-
-	r := http.Request{
-		Method: "GET",
-		URL:    api_url,
-		Body:   nil,
-		Header: make(http.Header),
-	}
-	r.SetBasicAuth(cfg.Pdns.Username, cfg.Pdns.Password)
-
-	// apply configuration settings to the http client.
-	client := &http.Client{
-		Transport: tr,
-	}
-
-	// get the previous spf records for the domain.
-	resp, err := client.Do(&r)
-	if err != nil {
-		log.Printf("Error accessing %s.  %s\n", api_url.String(), err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if resp.StatusCode != 200 {
-		log.Fatal("Error communicating with " + api_url.String() + " " + resp.Status)
-	}
-
-	// process the server resposne.
-	var domain_records PowerDNSZone
-	err = json.Unmarshal([]byte(body), &domain_records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return filterSPF(domain_records)
+	return matched
 }
 
 func filterSPF(domain_records PowerDNSZone) []RRSet {
-	// Return the set of SPF records for the domain.
+	// Return only SPF records for the domain.
 	records := []RRSet{}
 	name := strings.TrimSuffix(domain_records.Name, ".")
 	for _, rr := range domain_records.Rrsets {
