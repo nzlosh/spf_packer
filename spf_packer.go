@@ -647,7 +647,7 @@ func resolveMx(field string) []string {
 	ips := []string{}
 	mxs, err := net.LookupMX(field)
 	if err != nil {
-		log.Printf("Error looking up MX %s. %s\n", field, err)
+		log.Fatal(fmt.Sprintf("Error looking up MX %s. %s\n", field, err))
 	}
 	for _, mx := range mxs {
 		log.Printf("MX: %s\n", mx.Host)
@@ -682,7 +682,7 @@ func resolveInclude(record string) []string {
 	log.Printf("Include: %s\n", record)
 	spf_text, err := net.LookupTXT(record)
 	if err != nil {
-		log.Printf("Error looking up '%s'. %s\n", record, err)
+		log.Fatal(fmt.Sprintf("Error looking up '%s'. %s\n", record, err))
 	}
 	return spf_text
 }
@@ -692,7 +692,7 @@ func resolveA(record string) []string {
 	res, err := net.LookupHost(record)
 	log.Printf("A: %s\n", record)
 	if err != nil {
-		log.Printf("A record lookup error. %s\n", err)
+		log.Fatal(fmt.Printf("A record lookup error. %s\n", err))
 	}
 	for _, address := range res {
 		ip, err := ValidateIP(address)
