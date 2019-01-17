@@ -14,3 +14,12 @@ a:
   - mailhost.example
 mx:
   - mx.domain.example
+pdns:
+  api_key: <power dns api key>
+  api_url: "https://<api fqdn>:<port>/"
+  client_key: <path to tls client key>
+  client_cert: <path to tls client cert>
+  ca_cert: <path to tls ca cert>
+ # optional support for basic auth
+  username: <http username>
+  password: <http password>

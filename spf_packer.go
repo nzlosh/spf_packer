@@ -137,7 +137,7 @@ func (c *PowerDNSClient) zoneGet(server_id string, zone_id string) PowerDNSZone 
 	}
 
 	if resp.StatusCode != 200 {
-		log.Fatal("HTTP Error " + api_url.String() + " " + resp.Status)
+		log.Fatal(fmt.Sprintf("HTTP Error %s %s\n", api_url.String(), resp.Status))
 	}
 	// process the server resposne.
 	var zone PowerDNSZone
@@ -241,7 +241,7 @@ func main() {
 		records := filterSPF(zone)
 
 		if rrsetEquivalent(pdns_result, records) {
-			log.Println("SPF records are same.")
+			log.Println("SPF records are the same.")
 		} else {
 			log.Println(red("SPF has changed, update DNS records."))
 			update := createUpdateRecords(pdns_result, records)
@@ -692,7 +692,7 @@ func resolveA(record string) []string {
 	res, err := net.LookupHost(record)
 	log.Printf("A: %s\n", record)
 	if err != nil {
-		log.Fatal(fmt.Printf("A record lookup error. %s\n", err))
+		log.Fatal(fmt.Sprintf("A record lookup error. %s\n", err))
 	}
 	for _, address := range res {
 		ip, err := ValidateIP(address)
