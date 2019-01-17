@@ -756,7 +756,7 @@ func filterSPF(domain_records PowerDNSZone) []RRSet {
 	records := []RRSet{}
 	name := strings.TrimSuffix(domain_records.Name, ".")
 	for _, rr := range domain_records.Rrsets {
-		ok, _ := regexp.Match("^(spf[^.]+\\.)?"+name, []byte(rr.Name))
+		ok, _ := regexp.Match("^(spf[a-z]\\.)?"+name, []byte(rr.Name))
 		if ok == true && rr.Type == "TXT" {
 			for _, r := range rr.Records {
 				if strings.HasPrefix(r.Content, "\"v=spf1") {
