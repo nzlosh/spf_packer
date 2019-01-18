@@ -243,7 +243,8 @@ func main() {
 		if rrsetEquivalent(pdns_result, records) {
 			log.Println("SPF records are the same.")
 		} else {
-			log.Println(red("SPF has changed, update DNS records."))
+			log.Println("SPF has changed, update DNS records.  Previous entry:")
+			log.Println(string(rrsetToJson(records)))
 			update := createUpdateRecords(pdns_result, records)
 			if pdns.recordUpdate("", cfg.Domain, update) {
 				log.Println("Updated DNS records successfully.")
@@ -747,6 +748,8 @@ func rrsetEquivalent(set1 []RRSet, set2 []RRSet) bool {
 				break
 			}
 		}
+	} else {
+		matched = false
 	}
 	return matched
 }
