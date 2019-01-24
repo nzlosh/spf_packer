@@ -214,8 +214,56 @@ func (c *PowerDNSClient) recordDelete(server_id string) bool {
 
 /***************************************************************************************************/
 
+func usage(script_name string, version Version) {
+	fmt.Printf("Usage: %s -c <config.yaml>\n", script_name)
+	fmt.Printf("Version: %d.%d.%d\n", version.Major, version.Minor, version.Patch)
+	fmt.Println("    -c, --config    Configuration file.")
+	fmt.Println("    -h, --help      Display this help.")
+	fmt.Printf("    -n, --dryrun    Dry-run mode.  Don't apply changes.\n\n")
+	//	fmt.Println("    -v, --verbose   verbose logging.")
+}
+
+type Version struct {
+	Major int
+	Minor int
+	Patch int
+}
+
 func main() {
-	cfg := LoadConfig(os.Args[0] + ".yaml")
+	version := Version{1, 0, 0}
+	if len(os.Args) < 2 {
+		usage(os.Args[0], version)
+		os.Exit(1)
+	}
+
+	dryrun := false
+	verbose := false
+	cfg_file := ""
+	for i := 0; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--dryrun", "--dry-run", "-n", "dryrun", "dry-run":
+			dryrun = true
+		case "--verbose", "-v":
+			verbose = true
+		case "--help", "-h":
+			usage(os.Args[0], version)
+			os.Exit(0)
+		case "--config", "-c":
+			if i+1 >= len(os.Args) || strings.HasPrefix(os.Args[i+1], "-") {
+				fmt.Printf("\nFlag %s requries a filename.\n\n", os.Args[i])
+				usage(os.Args[0], version)
+				os.Exit(2)
+			} else {
+				i++
+				cfg_file = os.Args[i]
+			}
+		}
+
+	}
+	cfg := LoadConfig(cfg_file)
+	cfg.Dryrun = dryrun
+	cfg.Verbose = verbose
+
 	// parse configuration
 	result := processConfiguration(cfg)
 
@@ -240,12 +288,17 @@ func main() {
 		zone := pdns.zoneGet("", cfg.Domain)
 		records := filterSPF(zone)
 
+		log.Print(fmt.Sprintf("Dry-run mode enabled = %v", cfg.Dryrun))
 		if rrsetEquivalent(pdns_result, records) {
 			log.Println("SPF records are the same.")
 		} else {
 			log.Println("SPF has changed, update DNS records.  Previous entry:")
 			log.Println(string(rrsetToJson(records)))
 			update := createUpdateRecords(pdns_result, records)
+			if cfg.Dryrun == true {
+				log.Print("Dry-run mode - no changes applied.")
+				os.Exit(0)
+			}
 			if pdns.recordUpdate("", cfg.Domain, update) {
 				log.Println("Updated DNS records successfully.")
 			} else {
@@ -353,6 +406,8 @@ type Config struct {
 	Redirect    []string
 	Ptr         []string
 	Pdns        PdnsConfig
+	Dryrun      bool
+	Verbose     bool
 }
 
 type Comment struct {
