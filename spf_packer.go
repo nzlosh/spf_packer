@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"log"
@@ -18,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
 
 /**************************************************************************************************/
@@ -507,8 +508,62 @@ func processConfiguration(cfg *Config) []string {
 	return check_list
 }
 
-func deduplicateAddressRanges(result []string) []string {
-	// TODO: Implement de-duplication
+func deduplicateAddressRanges(all []string) []string {
+
+	// Dedupe records
+	seen := make(map[string]struct{})
+	for _, item := range all {
+		if _, ok := seen[item]; ok {
+			log.Printf("Ignoring duplicate %s\n", item)
+		} else {
+			seen[item] = struct{}{}
+		}
+	}
+
+	var deduped []string
+	for item, _ := range seen {
+		deduped = append(deduped, item)
+	}
+
+	// Build slice of CIDRs
+	var cidrs []*net.IPNet
+	for _, item := range deduped {
+		network := strings.SplitN(item, ":", 2)
+		if len(network) == 2 && strings.HasPrefix(network[0], "ip") {
+			_, cidr, err := net.ParseCIDR(network[1])
+			if err == nil {
+				cidrs = append(cidrs, cidr)
+			}
+		}
+	}
+
+	// Dedupe IP addresses covered by network range
+	var result []string
+	for _, item := range deduped {
+		address := strings.SplitN(item, ":", 2)
+		if len(address) == 2 && strings.HasPrefix(address[0], "ip") {
+			ip := net.ParseIP(address[1])
+			if ip != nil {
+				var duplicate bool
+				duplicate = false
+				for _, cidr := range cidrs {
+					if cidr.Contains(ip) {
+						duplicate = true
+						log.Printf("Ignoring IP address %s already contained in %s\n", item, cidr)
+						break
+					}
+				}
+				if !duplicate {
+					result = append(result, item)
+				}
+			} else { // not and address
+				result = append(result, item)
+			}
+		} else { // non IP item, no deduplicatiuon needed
+			result = append(result, item)
+		}
+	}
+	sort.Strings(result)
 	return result
 }
 
