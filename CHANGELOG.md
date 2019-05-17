@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Removed
 
+## [1.0.3] - 2019-06-17
+### Added
+
+### Changed
+  - Print spf records prefixed with domain
+  - Print the spf records in sorted order
+
+### Removed
+
 ## [1.0.1] - 2019-05-21
 ### Added
   - Simple IP address deduplication.

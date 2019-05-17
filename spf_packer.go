@@ -276,9 +276,7 @@ func main() {
 
 	// If PowerDNS configuration is not present, display results to console.
 	if (PdnsConfig{}) == cfg.Pdns {
-		// Create SPF TXT entries for list of addresses.
-		result = makeSpfFields(result, cfg)
-		printSpf(result, cfg.Domain)
+		printSpf(makeSpfFields(result, cfg), cfg.Domain)
 	} else {
 		log.Println("Comparing with PowerDNS entries")
 		// Create SPF entries in the form of PowerDNS Resource Records.
@@ -659,17 +657,17 @@ func resolveSPFFields(result []string) []string {
 	return spf_set
 }
 
-func makeSpfFields(result []string, cfg *Config) []string {
+func makeSpfFields(result []string, cfg *Config) map[string]string {
 	domain := cfg.Domain
 	suffix := "a"
-	spf_records := []string{}
+	spf_records := make(map[string]string)
 	current_record := "v=" + cfg.Version
 	spf_max_chars := cfg.SpfMaxChars
 	root_spf := fmt.Sprintf("%s %s include:spf%s.%s", current_record, cfg.Rawtxt, suffix, domain)
 
 	for i, record := range result {
 		if len(fmt.Sprintf("\"%s %s %s\"", current_record, record, cfg.Policy)) > spf_max_chars {
-			spf_records = append(spf_records, current_record+" "+cfg.Policy)
+			spf_records[fmt.Sprintf("spf%s.%s", suffix, domain)] = current_record + " " + cfg.Policy
 			current_record = fmt.Sprintf("v=%s %s", cfg.Version, record)
 			suffix = string([]byte(suffix)[0] + 1)
 			root_spf += fmt.Sprintf(" include:spf%s.%s", suffix, domain)
@@ -677,12 +675,13 @@ func makeSpfFields(result []string, cfg *Config) []string {
 			current_record = fmt.Sprintf("%s %s", current_record, record)
 		}
 		if i == len(result)-1 {
-			spf_records = append(spf_records, fmt.Sprintf("%s %s", current_record, cfg.Policy))
+			spf_records[fmt.Sprintf("spf%s.%s", suffix, domain)] = current_record + " " + cfg.Policy
 		}
 	}
 	root_spf += " " + cfg.Policy
 	// Insert the root spf at the beginning of the array and return the result.
-	return append(spf_records[:0], append([]string{root_spf}, spf_records[0:]...)...)
+	spf_records[domain] = root_spf
+	return spf_records
 }
 
 func makeRRSet(result []string, cfg *Config) []RRSet {
@@ -747,10 +746,16 @@ func makeRRSet(result []string, cfg *Config) []RRSet {
 	return spf_records
 }
 
-func printSpf(spf_records []string, domain string) {
+func printSpf(spf_records map[string]string, domain string) {
 	fmt.Printf("\nPacked SPF TXT records for %s.\n", domain)
-	for _, v := range spf_records {
-		fmt.Printf("\n%s\n", v)
+	var keys []string
+	for k := range spf_records {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		fmt.Printf("\n%s %s\n", k, spf_records[k])
 	}
 }
 
