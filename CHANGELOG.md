@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Removed
 
+## [0.0.2] - 2019-05-21
+### Added
+  - Simple IP address deduplication.
+
+### Changed
+
+### Removed
+
 ## [0.0.1] - 2018-05-15
 ### Added
   - Added Raw Text configuration option.  It can be used to insert raw text into the SPF TXT field 
