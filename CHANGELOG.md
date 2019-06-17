@@ -8,14 +8,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 ### Added
 
-
 ### Changed
 
 ### Removed
 
-## [0.0.2] - 2019-05-21
+## [1.0.1] - 2019-05-21
 ### Added
   - Simple IP address deduplication.
+
+### Changed
+  - Updated README.md to include command line options.
+
+### Removed
+
+## [1.0.0] - 2019-01-24
+### Added
+  - Added command line options for dry run, verbose and configuration file path.
 
 ### Changed
 

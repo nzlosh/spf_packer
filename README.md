@@ -8,10 +8,20 @@ that threshold and host the full set of allowed IP addresses at the SPF owners d
 
 # Configuration
 
-`spf_packer` takes no arguments and reads a YAML configuration file from the same directory as the
-executable.
+`spf_packer` takes the following arguments
 
-## Example
+## Command line arguments
+| Name | Data type | Description |
+| ---| --- | --- |
+| `dryrun` | flag | Run without making changes to the DNS backend. |
+| `verbose` | flag | Increase actions logged by spf_packer. |
+| `help` | flag | Command line help. |
+| `config` | argument | The filename of the YAML configuration file used by spf_packer. |
+
+`spf_packer` reads the YAML configuration file either from the same directory as the executable or
+as provided with `--config` argument.
+
+## YAML configuration example
 
 ```
 ---
