@@ -231,7 +231,7 @@ type Version struct {
 }
 
 func main() {
-	version := Version{1, 0, 0}
+	version := Version{1, 0, 3}
 	if len(os.Args) < 2 {
 		usage(os.Args[0], version)
 		os.Exit(1)

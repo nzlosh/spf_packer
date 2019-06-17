@@ -14,7 +14,7 @@ that threshold and host the full set of allowed IP addresses at the SPF owners d
 | Name | Data type | Description |
 | ---| --- | --- |
 | `dryrun` | flag | Run without making changes to the DNS backend. |
-| `verbose` | flag | Increase actions logged by spf_packer. |
+| `verbose` | flag | Increase verbosity of actions performed by spf_packer. |
 | `help` | flag | Command line help. |
 | `config` | argument | The filename of the YAML configuration file used by spf_packer. |
 
