@@ -47,6 +47,12 @@ func (c *PowerDNSClient) setConfiguration(cfg PdnsConfig) {
 	c.tls_config = tls.Config{
 		ServerName: "localhost",
 	}
+	cert, err := tls.LoadX509KeyPair(cfg.Client_cert, cfg.Client_key)
+	if err == nil {
+		c.tls_config.Certificates = []tls.Certificate{cert}
+	} else {
+		log.Println(err)
+	}
 	c.transport = &http.Transport{
 		MaxIdleConns:        10,
 		IdleConnTimeout:     30 * time.Second,
