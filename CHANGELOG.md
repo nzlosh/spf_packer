@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Removed
 
+## [1.1.0] - 2023-04-12
+### Added
+  - Support to load client certificate. (#5 @xhenner)
+
+### Changed
+
+### Removed
+
 ## [1.0.3] - 2019-06-17
 ### Added
 
